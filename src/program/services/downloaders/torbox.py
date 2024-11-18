@@ -12,7 +12,7 @@ from program.media.state import States
 from program.media.stream import Stream
 from program.settings.manager import settings_manager
 from program.services.downloaders.shared import DownloaderBase, InfoHash, DebridTorrentId
-from program.utils.request import HttpMethod, RequestHandler
+from program.utils.request import HttpMethod, execute_request
 from loguru import logger
 API_URL = "https://api.torbox.app/v1/api"
 WANTED_FORMATS = {".mkv", ".mp4", ".avi"}
@@ -24,7 +24,6 @@ class TorBoxDownloader(DownloaderBase):
         self.api_key = self.settings.api_key
         self.base_url = API_URL
         self.headers = {"Authorization": f"Bearer {self.api_key}"}
-        self.request_handler = RequestHandler()
         self.initialized = self.validate()
         if not self.initialized:
             return
@@ -37,7 +36,7 @@ class TorBoxDownloader(DownloaderBase):
             logger.error("Torbox API key is not set")
             return False
         try:
-            response = self.request_handler.execute(
+            response = execute_request(
                 HttpMethod.GET,
                 f"{self.base_url}/user/me",
                 headers=self.headers
@@ -63,7 +62,7 @@ class TorBoxDownloader(DownloaderBase):
     def get_instant_availability(self, hashes: List[InfoHash]) -> Dict[InfoHash, dict]:
         """Check instant availability of hashes"""
         hash_string = ",".join(hashes)
-        response = self.request_handler.execute(
+        response = execute_request(
             HttpMethod.GET,
             f"{self.base_url}/torrents/checkcached",
             params={"hash": hash_string, "list_files": True},
@@ -75,7 +74,7 @@ class TorBoxDownloader(DownloaderBase):
     def add_torrent(self, infohash: InfoHash) -> Optional[DebridTorrentId]:
         """Add a torrent to TorBox"""
         magnet_url = f"magnet:?xt=urn:btih:{infohash}&dn=&tr="
-        response = self.request_handler.execute(
+        response = execute_request(
             HttpMethod.POST,
             f"{self.base_url}/torrents/createtorrent",
             data={"magnet": magnet_url, "seed": 1, "allow_zip": False},
@@ -89,7 +88,7 @@ class TorBoxDownloader(DownloaderBase):
         return True
     def get_torrent_info(self, torrent_id: DebridTorrentId) -> Optional[dict]:
         """Get torrent information"""
-        response = self.request_handler.execute(
+        response = execute_request(
             HttpMethod.GET,
             f"{self.base_url}/torrents/mylist",
             params={"bypass_cache": True},
@@ -104,7 +103,7 @@ class TorBoxDownloader(DownloaderBase):
         return None
     def delete_torrent(self, torrent_id: DebridTorrentId) -> bool:
         """Delete a torrent"""
-        response = self.request_handler.execute(
+        response = execute_request(
             HttpMethod.POST,
             f"{self.base_url}/torrents/controltorrent",
             data={"torrent_id": torrent_id, "operation": "Delete"},
