@@ -8,7 +8,7 @@ from program.services.downloaders.shared import filesize_is_acceptable, get_inva
 
 from .alldebrid import AllDebridDownloader
 from .realdebrid import RealDebridDownloader
-# from .torbox import TorBoxDownloader
+from .torbox import TorBoxDownloader
 
 class InvalidFileSizeException(Exception):
     pass
