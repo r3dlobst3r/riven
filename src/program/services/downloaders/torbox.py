@@ -12,8 +12,8 @@ from program.media.state import States
 from program.media.stream import Stream
 from program.settings.manager import settings_manager
 from program.services.downloaders.shared import DownloaderBase, InfoHash, DebridTorrentId
+from program.utils.request import HttpMethod, RequestHandler
 from loguru import logger
-from program.utils.request import get, post
 API_URL = "https://api.torbox.app/v1/api"
 WANTED_FORMATS = {".mkv", ".mp4", ".avi"}
 class TorBoxDownloader(DownloaderBase):
@@ -24,6 +24,7 @@ class TorBoxDownloader(DownloaderBase):
         self.api_key = self.settings.api_key
         self.base_url = API_URL
         self.headers = {"Authorization": f"Bearer {self.api_key}"}
+        self.request_handler = RequestHandler()
         self.initialized = self.validate()
         if not self.initialized:
             return
@@ -36,17 +37,21 @@ class TorBoxDownloader(DownloaderBase):
             logger.error("Torbox API key is not set")
             return False
         try:
-            response = get(f"{self.base_url}/user/me", headers=self.headers)
-            if response.is_ok:
-                user_info = response.data.data
-                expiration = user_info.premium_expires_at
+            response = self.request_handler.execute(
+                HttpMethod.GET,
+                f"{self.base_url}/user/me",
+                headers=self.headers
+            )
+            if response:
+                user_info = response.get("data", {})
+                expiration = user_info.get("premium_expires_at")
                 expiration_date = datetime.fromisoformat(expiration)
                 delta = expiration_date - datetime.now().replace(tzinfo=expiration_date.tzinfo)
                 if delta.days > 0:
                     logger.log("DEBRID", f"Your account expires in {delta.days} days.")
                 else:
                     logger.log("DEBRID", "Your account expires soon.")
-                if user_info.plan == 0:
+                if user_info.get("plan", 0) == 0:
                     logger.error("You are not a premium member.")
                     return False
                 return True
@@ -58,48 +63,54 @@ class TorBoxDownloader(DownloaderBase):
     def get_instant_availability(self, hashes: List[InfoHash]) -> Dict[InfoHash, dict]:
         """Check instant availability of hashes"""
         hash_string = ",".join(hashes)
-        response = get(
-            f"{self.base_url}/torrents/checkcached?hash={hash_string}&list_files=True",
+        response = self.request_handler.execute(
+            HttpMethod.GET,
+            f"{self.base_url}/torrents/checkcached",
+            params={"hash": hash_string, "list_files": True},
             headers=self.headers
         )
-        if not response.is_ok:
+        if not response:
             return {}
-        return response.data.data
+        return response.get("data", {})
     def add_torrent(self, infohash: InfoHash) -> Optional[DebridTorrentId]:
         """Add a torrent to TorBox"""
         magnet_url = f"magnet:?xt=urn:btih:{infohash}&dn=&tr="
-        response = post(
+        response = self.request_handler.execute(
+            HttpMethod.POST,
             f"{self.base_url}/torrents/createtorrent",
             data={"magnet": magnet_url, "seed": 1, "allow_zip": False},
             headers=self.headers
         )
-        if not response.is_ok:
+        if not response:
             return None
-        return response.data.data.torrent_id
+        return response.get("data", {}).get("torrent_id")
     def select_files(self, torrent_id: DebridTorrentId, file_ids: List[int]) -> bool:
         """Select files to download - Not needed for TorBox"""
         return True
     def get_torrent_info(self, torrent_id: DebridTorrentId) -> Optional[dict]:
         """Get torrent information"""
-        response = get(
-            f"{self.base_url}/torrents/mylist?bypass_cache=true",
+        response = self.request_handler.execute(
+            HttpMethod.GET,
+            f"{self.base_url}/torrents/mylist",
+            params={"bypass_cache": True},
             headers=self.headers
         )
-        if not response.is_ok:
+        if not response:
             return None
-        torrents = response.data.data
+        torrents = response.get("data", [])
         for torrent in torrents:
             if torrent["id"] == torrent_id:
                 return torrent
         return None
     def delete_torrent(self, torrent_id: DebridTorrentId) -> bool:
         """Delete a torrent"""
-        response = post(
+        response = self.request_handler.execute(
+            HttpMethod.POST,
             f"{self.base_url}/torrents/controltorrent",
             data={"torrent_id": torrent_id, "operation": "Delete"},
             headers=self.headers
         )
-        return response.is_ok
+        return bool(response)
     def run(self, item: MediaItem) -> bool:
         """Main download method for TorBox"""
         if not self.initialized:
