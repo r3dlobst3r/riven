@@ -1,8 +1,8 @@
 #!/bin/sh
 
 # Default PUID and PGID to 1000 if not set
-PUID=${PUID:-1000}
-PGID=${PGID:-1000}
+PUID=${PUID:-768}
+PGID=${PGID:-3500}
 
 echo "Starting Container with $PUID:$PGID permissions..."
 
